@@ -1,106 +1,84 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(page_title="Teen Patti Predictor", layout="centered")
-st.title("🃏 Teen Patti Chair Win Predictor (Enhanced)")
-st.markdown("Smart prediction using recent 10 rounds with detailed explanation.")
+st.set_page_config(page_title="Teen Patti Smart Predictor", layout="centered")
+st.title("🃏 Teen Patti Chair Predictor (Advanced Logic)")
+st.markdown("Uses pattern rules, win streaks, and pot sizes to predict likely winners")
 
-# Initialize round history
 if "rounds" not in st.session_state:
     st.session_state.rounds = []
 
 chairs = ["A", "B", "C"]
 
-# Input Form
-with st.form("round_form"):
+# Input form
+with st.form("round_input"):
     st.subheader("➕ Add Round Data")
-    pot_a = st.number_input("Pot A (in thousands)", min_value=0, step=1, value=0)
-    pot_b = st.number_input("Pot B (in thousands)", min_value=0, step=1, value=0)
-    pot_c = st.number_input("Pot C (in thousands)", min_value=0, step=1, value=0)
-    winner = st.selectbox("Winning Chair", options=chairs)
+    pot_a = st.number_input("Pot A (in thousands)", min_value=0, step=1)
+    pot_b = st.number_input("Pot B (in thousands)", min_value=0, step=1)
+    pot_c = st.number_input("Pot C (in thousands)", min_value=0, step=1)
+    winner = st.selectbox("Winning Chair", chairs)
     submit = st.form_submit_button("Add Round")
 
 if submit:
-    new_round = {
-        "Round": len(st.session_state.rounds) + 1,
-        "A": pot_a,
-        "B": pot_b,
-        "C": pot_c,
-        "Winner": winner,
-    }
-    st.session_state.rounds.append(new_round)
-    st.success(f"✅ Round {new_round['Round']} added!")
+    st.session_state.rounds.append({"Round": len(st.session_state.rounds)+1, "A": pot_a, "B": pot_b, "C": pot_c, "Winner": winner})
+    st.success(f"✅ Round {len(st.session_state.rounds)} added")
 
-# Show history
+# Show data
 if st.session_state.rounds:
     df = pd.DataFrame(st.session_state.rounds)
-    st.subheader("📊 Round History")
-    st.dataframe(df, use_container_width=True)
+    st.subheader("📜 Match History (Last 10)")
+    st.dataframe(df.tail(10), use_container_width=True)
 
-    # Scoring logic function
-    def calculate_scores(df):
-        scores = {"A": 0, "B": 0, "C": 0}
+    # Smart rule-based prediction
+    def advanced_predictor(df, lookback=10):
+        recent = df.tail(lookback)
+        win_counts = recent["Winner"].value_counts()
+        last_winner = recent.iloc[-1]["Winner"]
+        second_last_winner = recent.iloc[-2]["Winner"] if len(recent) >= 2 else None
+
+        scores = {chair: 0 for chair in chairs}
         reasons = {chair: [] for chair in chairs}
 
-        recent_df = df.tail(10)
-        last_winners = recent_df["Winner"].tolist()
-        total_wins = recent_df["Winner"].value_counts()
+        for chair in scores:
+            no_win_boost = 5 - recent["Winner"].tolist().count(chair)
+            scores[chair] += no_win_boost
+            reasons[chair].append(f"+{no_win_boost} for fewer recent wins")
 
-        for chair in chairs:
-            # Reward if not winning much recently
-            underdog_bonus = 5 - last_winners.count(chair)
-            scores[chair] += underdog_bonus
-            reasons[chair].append(f"+{underdog_bonus} for not winning much in last 10 rounds")
+            if chair == last_winner and chair == second_last_winner:
+                scores[chair] -= 2
+                reasons[chair].append("-2 for possible over-win penalty")
 
-            # Slight penalty if won last round (repeat is allowed)
-            if len(last_winners) >= 1 and chair == last_winners[-1]:
-                scores[chair] -= 1
-                reasons[chair].append("-1 for winning last round (repeat)")
+            if len(recent) >= 3:
+                last_3 = recent["Winner"].tolist()[-3:]
+                if last_3 == ['A', 'B', 'C'] and chair == 'A':
+                    scores[chair] += 3
+                    reasons[chair].append("+3 for A\u2192B\u2192C\u2192A pattern")
+                elif last_3 == ['B', 'C', 'A'] and chair == 'B':
+                    scores[chair] += 3
+                    reasons[chair].append("+3 for B\u2192C\u2192A\u2192B pattern")
+                elif last_3 == ['C', 'A', 'B'] and chair == 'C':
+                    scores[chair] += 3
+                    reasons[chair].append("+3 for C\u2192A\u2192B\u2192C pattern")
 
-            # Boost if total wins in recent 10 is low
-            rare_winner_bonus = max(0, 4 - total_wins.get(chair, 0))
-            scores[chair] += rare_winner_bonus
-            reasons[chair].append(f"+{rare_winner_bonus} for being rare winner")
-
-            # Pattern-based rotation boost
-            if len(last_winners) >= 3:
-                pattern = last_winners[-3:]
-                if pattern == ['A', 'B', 'C'] and chair == 'A':
-                    scores[chair] += 2
-                    reasons[chair].append("+2 for matching rotation pattern A→B→C→A")
-                elif pattern == ['B', 'C', 'A'] and chair == 'B':
-                    scores[chair] += 2
-                    reasons[chair].append("+2 for matching rotation pattern B→C→A→B")
-                elif pattern == ['C', 'A', 'B'] and chair == 'C':
-                    scores[chair] += 2
-                    reasons[chair].append("+2 for matching rotation pattern C→A→B→C")
-
-            # Pot position bonus
-            last_pots = df.iloc[-1][["A", "B", "C"]]
-            chair_pot = df.iloc[-1][chair]
-            min_pot, max_pot = min(last_pots), max(last_pots)
-
-            if chair_pot == min_pot:
+            last_pots = recent.iloc[-1][["A", "B", "C"]]
+            chair_pot = recent.iloc[-1][chair]
+            if chair_pot == min(last_pots):
                 scores[chair] += 2
-                reasons[chair].append("+2 for having lowest pot last round")
+                reasons[chair].append("+2 for lowest pot last round")
             elif chair_pot == sorted(last_pots)[1]:
                 scores[chair] += 1
-                reasons[chair].append("+1 for having medium pot last round")
+                reasons[chair].append("+1 for medium pot last round")
 
         return scores, reasons
 
-    # Run prediction
-    scores, reasons = calculate_scores(df)
+    scores, reasons = advanced_predictor(df)
     sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-    top_two = sorted_scores[:2]
 
     st.subheader("🔮 Prediction for Next Round")
-    st.write("Top predicted winning chairs (based on last 10 rounds):")
-    for idx, (chair, score) in enumerate(top_two, start=1):
+    for idx, (chair, score) in enumerate(sorted_scores[:2], start=1):
         st.markdown(f"**{idx}. Chair {chair}** — Score: `{score}`")
-        with st.expander(f"🔎 Why Chair {chair}?"):
+        with st.expander(f"📌 Reasoning for Chair {chair}"):
             for reason in reasons[chair]:
-                st.write(f"- {reason}")
-
+                st.markdown(f"- {reason}")
 else:
-    st.info("Please add at least one round to begin predictions.")
+    st.info("Please enter at least 1 round to start predictions.")
