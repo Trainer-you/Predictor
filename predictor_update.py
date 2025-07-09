@@ -2,15 +2,17 @@ import streamlit as st
 import pandas as pd
 
 st.set_page_config(page_title="Teen Patti Smart Predictor", layout="centered")
-st.title("🃏 Teen Patti Chair Predictor (Advanced Logic)")
-st.markdown("Uses pattern rules, win streaks, and pot sizes to predict likely winners")
+st.title("🃏 Teen Patti Chair Predictor (Dual Mode)")
+st.markdown("Switch between **Pattern Mode** and **Pot Mode** to adapt to game strategy.")
 
 if "rounds" not in st.session_state:
     st.session_state.rounds = []
 
-chairs = ["A", "B", "C"]
+# Mode selection
+mode = st.radio("🎮 Select Prediction Mode:", ["Pattern Mode", "Pot Mode"])
 
 # Input form
+chairs = ["A", "B", "C"]
 with st.form("round_input"):
     st.subheader("➕ Add Round Data")
     pot_a = st.number_input("Pot A (in thousands)", min_value=0, step=1)
@@ -23,58 +25,59 @@ if submit:
     st.session_state.rounds.append({"Round": len(st.session_state.rounds)+1, "A": pot_a, "B": pot_b, "C": pot_c, "Winner": winner})
     st.success(f"✅ Round {len(st.session_state.rounds)} added")
 
-# Show data
+# Show history
 if st.session_state.rounds:
     df = pd.DataFrame(st.session_state.rounds)
     st.subheader("📜 Match History (Last 10)")
     st.dataframe(df.tail(10), use_container_width=True)
 
-    # Smart rule-based prediction
-    def advanced_predictor(df, lookback=10):
-        recent = df.tail(lookback)
-        win_counts = recent["Winner"].value_counts()
-        last_winner = recent.iloc[-1]["Winner"]
-        second_last_winner = recent.iloc[-2]["Winner"] if len(recent) >= 2 else None
+    def pattern_mode_predictor(df):
+        recent = df.tail(10)
+        scores = {c: 0 for c in chairs}
+        reasons = {c: [] for c in chairs}
+        last_3 = recent["Winner"].tolist()[-3:] if len(recent) >= 3 else []
 
-        scores = {chair: 0 for chair in chairs}
-        reasons = {chair: [] for chair in chairs}
-
-        for chair in scores:
-            no_win_boost = 5 - recent["Winner"].tolist().count(chair)
-            scores[chair] += no_win_boost
-            reasons[chair].append(f"+{no_win_boost} for fewer recent wins")
-
-            if chair == last_winner and chair == second_last_winner:
-                scores[chair] -= 2
-                reasons[chair].append("-2 for possible over-win penalty")
-
-            if len(recent) >= 3:
-                last_3 = recent["Winner"].tolist()[-3:]
-                if last_3 == ['A', 'B', 'C'] and chair == 'A':
-                    scores[chair] += 3
-                    reasons[chair].append("+3 for A\u2192B\u2192C\u2192A pattern")
-                elif last_3 == ['B', 'C', 'A'] and chair == 'B':
-                    scores[chair] += 3
-                    reasons[chair].append("+3 for B\u2192C\u2192A\u2192B pattern")
-                elif last_3 == ['C', 'A', 'B'] and chair == 'C':
-                    scores[chair] += 3
-                    reasons[chair].append("+3 for C\u2192A\u2192B\u2192C pattern")
-
-            last_pots = recent.iloc[-1][["A", "B", "C"]]
-            chair_pot = recent.iloc[-1][chair]
-            if chair_pot == min(last_pots):
-                scores[chair] += 2
-                reasons[chair].append("+2 for lowest pot last round")
-            elif chair_pot == sorted(last_pots)[1]:
-                scores[chair] += 1
-                reasons[chair].append("+1 for medium pot last round")
-
+        for chair in chairs:
+            if last_3 == ['A', 'B', 'C'] and chair == 'A':
+                scores[chair] += 4
+                reasons[chair].append("+4 for A→B→C→A pattern")
+            elif last_3 == ['B', 'C', 'A'] and chair == 'B':
+                scores[chair] += 4
+                reasons[chair].append("+4 for B→C→A→B pattern")
+            elif last_3 == ['C', 'A', 'B'] and chair == 'C':
+                scores[chair] += 4
+                reasons[chair].append("+4 for C→A→B→C pattern")
+            # Add more rules if needed
+            scores[chair] += 5 - recent["Winner"].tolist().count(chair)
+            reasons[chair].append("+? for fewer recent wins")
         return scores, reasons
 
-    scores, reasons = advanced_predictor(df)
-    sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    def pot_mode_predictor(df):
+        recent = df.tail(10)
+        last = recent.iloc[-1][["A", "B", "C"]]
+        scores = {c: 0 for c in chairs}
+        reasons = {c: [] for c in chairs}
 
-    st.subheader("🔮 Prediction for Next Round")
+        for chair in chairs:
+            chair_pot = last[chair]
+            if chair_pot == min(last):
+                scores[chair] += 2
+                reasons[chair].append("+2 for lowest pot last round")
+            elif chair_pot == sorted(last)[1]:
+                scores[chair] += 1
+                reasons[chair].append("+1 for medium pot")
+            scores[chair] += 5 - recent["Winner"].tolist().count(chair)
+            reasons[chair].append("+? for fewer recent wins")
+        return scores, reasons
+
+    # Choose prediction mode
+    if mode == "Pattern Mode":
+        scores, reasons = pattern_mode_predictor(df)
+    else:
+        scores, reasons = pot_mode_predictor(df)
+
+    sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    st.subheader(f"🔮 Prediction for Next Round ({mode})")
     for idx, (chair, score) in enumerate(sorted_scores[:2], start=1):
         st.markdown(f"**{idx}. Chair {chair}** — Score: `{score}`")
         with st.expander(f"📌 Reasoning for Chair {chair}"):
